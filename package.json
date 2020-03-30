@@ -1,0 +1,11 @@
+{
+  "name": "agoraofficeviewer",
+  "version": "1.0.0",
+  "description": "A typescript library to easily embed office documents in your webpage along with syncing enabled with Agora RTM",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
