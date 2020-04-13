@@ -17,10 +17,13 @@ export default class AgoraOffice {
     fileUrl: URL;
     proxyBase: string;
 
-    constructor(baseUrl: string, channel: RtmChannel, iframe: HTMLIFrameElement, role: Role) {
+    constructor(baseUrl: string, channel: RtmChannel, iframe: HTMLIFrameElement) {
         this.baseUrl = baseUrl;
         this.channel = channel;
         this.iframe = iframe;
+    }
+
+    setRole(role: Role) {
         this.role = role;
     }
 
