@@ -35,8 +35,6 @@ export default class AgoraOffice {
 
                 return new Promise(resolve => {
                     window.document.addEventListener('iframeEvent', (iframeResponse: CustomEvent) => {
-                        console.log("parent");
-                        console.log(iframeResponse);
                         const fileUrl: URL = new URL(`/files/${iframeResponse.detail}`, this.baseUrl);
                         resolve(fileUrl);
                     })
@@ -55,13 +53,11 @@ export default class AgoraOffice {
 
             if (response.ok) {
                 const jsonResponse = await response.json();
-                console.log(jsonResponse);
                 this.proxyBase = jsonResponse.baseUrl;
                 this.loadIframe(jsonResponse.htmlContent);
             }
 
             return new Promise(resolve => {
-                // const parent = document.getElementsByClassName("WACFrameWord")[0];
                 const doc = this.iframe.contentDocument;
                 const observer = new MutationObserver(mutations => {
                     if (doc.getElementById("WACScroller") || doc.getElementById("AppForOfficeOverlay") || doc.querySelector("#m_excelWebRenderer_ewaCtl_m_sheetTabBar > div.ewa-stb-contentarea > div > ul")) {
@@ -80,7 +76,6 @@ export default class AgoraOffice {
     async _waitForDocument() {
         return new Promise(resolve => {
             this.channel.on("ChannelMessage", ({ text }, _senderId) => {
-                console.log(text);
                 const response = JSON.parse(text);
                 resolve(response.fileUrl);
             });
@@ -118,12 +113,6 @@ export default class AgoraOffice {
         if (this.role === Role.Broadcaster) {
             const scrollElement = iframeDocument.getElementById("m_excelWebRenderer_ewaCtl_sheetContentDiv");
             scrollElement.onwheel = () => {
-                console.log({
-                    type: "scroll",
-                    sT: scrollElement.scrollTop,
-                    sL: scrollElement.scrollLeft,
-                    fileUrl: this.fileUrl
-                })
                 this.channel.sendMessage({
                     text: JSON.stringify({
                         type: "scroll",
@@ -137,7 +126,6 @@ export default class AgoraOffice {
             const bottomList = iframeDocument.querySelector("#m_excelWebRenderer_ewaCtl_m_sheetTabBar > div.ewa-stb-contentarea > div > ul");
             for (let ele of bottomList.children) {
                 ele.addEventListener('click', event => {
-                    console.log(event);
                     const target: HTMLSpanElement = <HTMLSpanElement> event.target;
                     const textContent = target.textContent;
                     const listBottom = iframeDocument.querySelectorAll("ul > li > a > span > span:nth-child(1)");
@@ -147,11 +135,6 @@ export default class AgoraOffice {
                             indexClicked = index;
                         }
                     }
-                    console.log({
-                        type: "click",
-                        index: indexClicked,
-                        fileUrl: this.fileUrl
-                    })
                     this.channel.sendMessage({
                         text: JSON.stringify({
                             type: "click",
@@ -165,7 +148,6 @@ export default class AgoraOffice {
         } else if (this.role === Role.Receiver) {
             this.channel.on("ChannelMessage", ({ text }, _senderId) => {
                 const response = JSON.parse(text);
-                console.log(text);
                 if (this.fileUrl == undefined) {
                     this.loadDocument(response.fileUrl);
                 }
@@ -193,11 +175,6 @@ export default class AgoraOffice {
         if (this.role === Role.Broadcaster) {
             const scrollElement = this.iframe.contentDocument.getElementById("WACContainer");
             scrollElement.onwheel = () => {
-                console.log(JSON.stringify({
-                    sT: scrollElement.scrollTop,
-                    sL: scrollElement.scrollLeft,
-                    fileUrl: this.fileUrl
-                }));
                 this.channel.sendMessage({
                     text: JSON.stringify({
                         sT: scrollElement.scrollTop,
@@ -211,7 +188,6 @@ export default class AgoraOffice {
         } else if (this.role === Role.Receiver) {
             this.channel.on("ChannelMessage", ({ text }, _senderId) => {
                 const scrollElement = this.iframe.contentDocument.getElementById("WACContainer");
-                console.log(text);
                 const scrollPosition = JSON.parse(text);
                 if (this.fileUrl == undefined) {
                     this.loadDocument(scrollPosition.fileUrl);
@@ -311,25 +287,6 @@ export default class AgoraOffice {
                     }
                 },
             });
-            
-            // const img_observer = new MutationObserver(mutations => {
-            //     mutations.forEach(mutation => {
-            //         mutation.addedNodes.forEach(node => {
-            //             // console.log(node);
-            //             // console.log(node.tagName);
-            //             if (node.tagName == "IMG") {
-            //                 const currentUrl = new URL(node.src);
-            //                 if (currentUrl) {
-            //                     console.log(currentUrl);
-            //                     const newUrl = new URL(currentUrl.pathname, "${this.baseUrl.toString()}/proxy/" + encodeURIComponent(currentUrl.host));
-            //                     node.src = newUrl.toString();
-            //                     node.crossOrigin = "";
-            //                 }
-            //             }
-            //         })
-            //     });  
-            // });
-            // img_observer.observe(document, {attributes: false, childList: true, characterData: false, subtree:true});
         `;
         mutScript.src = "data:text/javascript;charset=utf-8," + escape(mutScriptContent);
         const base = document.createElement("base");
@@ -337,7 +294,6 @@ export default class AgoraOffice {
         const proxyComponent = (this.proxyBase === undefined) ? "" : `proxy/${encodeURIComponent(this.proxyBase)}/`;
         base.setAttribute("href", `${url.protocol}//${url.hostname}${url.port ? ":" + url.port : ""}/${proxyComponent}`);
         const scriptTag: HTMLScriptElement = dom.querySelector("#applicationOuterContainer > script:nth-child(6)");
-        console.log(scriptTag);
         if (scriptTag) {
             fetch(`${this.baseUrl.toString()}/assets/BootView.js`).then(response => {
                 return response.text();
