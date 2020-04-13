@@ -1,6 +1,6 @@
 {
   "name": "agora-office",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "A typescript library to easily embed office documents in your webpage along with syncing enabled with Agora RTM",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

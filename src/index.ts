@@ -91,13 +91,13 @@ export default class AgoraOffice {
 
     _sync() {
         if (this.iframe.contentDocument.getElementById("WACScroller")) {
-            this.type = "word";
+            this.type = "docx";
             this._syncDOC();
         } else if (this.iframe.contentDocument.querySelector("#m_excelWebRenderer_ewaCtl_m_sheetTabBar > div.ewa-stb-contentarea > div > ul")) {
-            this.type = "excel";
+            this.type = "xlsx";
             this._syncXLS();
         } else {
-            this.type = "ppt";
+            this.type = "pptx";
             this._syncPPT();
         }
     }
@@ -258,6 +258,7 @@ export default class AgoraOffice {
     loadIframe(content: string) {
         const document = this.iframe.contentWindow.document; 
         const dom = new DOMParser().parseFromString(content, "text/html");
+        console.log("type");
         console.log(this.type);
         console.log(this.type != undefined && this.type != 'docx' && this.type != 'doc');
         if (this.type != undefined && this.type != 'docx' && this.type != 'doc') {
