@@ -48,49 +48,65 @@ export default class AgoraOffice {
     }
 
     async loadDocument(fileUrl: URL) {
-        if (this.role === Role.Broadcaster) {
-            this.fileUrl = fileUrl;
-            const requestUrl = new URL(`/do?url=${fileUrl.toString()}`, this.baseUrl);
-            try {
-                const response = await fetch(requestUrl.toString());
+        this.fileUrl = fileUrl;
+        const requestUrl = new URL(`/do?url=${fileUrl.toString()}`, this.baseUrl);
+        try {
+            const response = await fetch(requestUrl.toString());
 
-                if (response.ok) {
-                    const jsonResponse = await response.json();
-                    console.log(jsonResponse);
-                    this.proxyBase = jsonResponse.baseUrl;
-                    this.loadIframe(jsonResponse.htmlContent);
-                }
-
-                return new Promise(resolve => {
-                    // const parent = document.getElementsByClassName("WACFrameWord")[0];
-                    const doc = this.iframe.contentDocument;
-                    const observer = new MutationObserver(mutations => {
-                        if (doc.getElementById("WACScroller") || doc.getElementById("AppForOfficeOverlay") || doc.querySelector("#m_excelWebRenderer_ewaCtl_m_sheetTabBar > div.ewa-stb-contentarea > div > ul")) {
-                            observer.disconnect();
-                            resolve();
-                        }
-                    });
-                    observer.observe(doc, {attributes: false, childList: true, characterData: false, subtree:true});
-                })
-
-            } catch (error) {
-                return Promise.reject(error);
+            if (response.ok) {
+                const jsonResponse = await response.json();
+                console.log(jsonResponse);
+                this.proxyBase = jsonResponse.baseUrl;
+                this.loadIframe(jsonResponse.htmlContent);
             }
-        } else if (this.role === Role.Receiver) {
-            
+
+            return new Promise(resolve => {
+                // const parent = document.getElementsByClassName("WACFrameWord")[0];
+                const doc = this.iframe.contentDocument;
+                const observer = new MutationObserver(mutations => {
+                    if (doc.getElementById("WACScroller") || doc.getElementById("AppForOfficeOverlay") || doc.querySelector("#m_excelWebRenderer_ewaCtl_m_sheetTabBar > div.ewa-stb-contentarea > div > ul")) {
+                        observer.disconnect();
+                        resolve();
+                    }
+                });
+                observer.observe(doc, {attributes: false, childList: true, characterData: false, subtree:true});
+            })
+
+        } catch (error) {
+            return Promise.reject(error);
+        }
+    }
+
+    async _waitForDocument() {
+        return new Promise(resolve => {
+            this.channel.on("ChannelMessage", ({ text }, _senderId) => {
+                console.log(text);
+                const response = JSON.parse(text);
+                resolve(response.fileUrl);
+            });
+        })
+    }
+
+    _sync() {
+        if (this.iframe.contentDocument.getElementById("WACScroller")) {
+            this._syncDOC();
+        } else if (this.iframe.contentDocument.querySelector("#m_excelWebRenderer_ewaCtl_m_sheetTabBar > div.ewa-stb-contentarea > div > ul")) {
+            this._syncXLS();
         } else {
-            console.error("Invalid Role");
+            this._syncPPT();
         }
     }
 
     syncDocument() {
         this.channel.join().then(() => {
-            if (this.iframe.contentDocument.getElementById("WACScroller")) {
-                this._syncDOC();
-            } else if (this.iframe.contentDocument.querySelector("#m_excelWebRenderer_ewaCtl_m_sheetTabBar > div.ewa-stb-contentarea > div > ul")) {
-                this._syncXLS();
+            if (this.role === Role.Receiver) {
+                this._waitForDocument().then(fileUrl => {
+                    this.loadDocument(<URL> fileUrl).then(() => {
+                        this._sync();
+                    });
+                });
             } else {
-                this._syncPPT();
+                this._sync();
             }
         }).catch(error => {
             console.error("Error Joining RTM channel " + error,)
@@ -122,9 +138,15 @@ export default class AgoraOffice {
             for (let ele of bottomList.children) {
                 ele.addEventListener('click', event => {
                     console.log(event);
-                    const clicked = event.target;
+                    const target: HTMLSpanElement = <HTMLSpanElement> event.target;
+                    const textContent = target.textContent;
                     const listBottom = iframeDocument.querySelectorAll("ul > li > a > span > span:nth-child(1)");
-                    const indexClicked = Array.prototype.indexOf.call(listBottom, clicked);
+                    let indexClicked = 0;
+                    for (let [index, ele] of listBottom.entries()) {
+                        if (ele.textContent == textContent) {
+                            indexClicked = index;
+                        }
+                    }
                     console.log({
                         type: "click",
                         index: indexClicked,
