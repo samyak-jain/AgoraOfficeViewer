@@ -48,41 +48,123 @@ export default class AgoraOffice {
     }
 
     async loadDocument(fileUrl: URL) {
-        this.fileUrl = fileUrl;
-        const requestUrl = new URL(`/do?url=${fileUrl.toString()}`, this.baseUrl);
-        try {
-            const response = await fetch(requestUrl.toString());
+        if (this.role === Role.Broadcaster) {
+            this.fileUrl = fileUrl;
+            const requestUrl = new URL(`/do?url=${fileUrl.toString()}`, this.baseUrl);
+            try {
+                const response = await fetch(requestUrl.toString());
 
-            if (response.ok) {
-                const jsonResponse = await response.json();
-                console.log(jsonResponse);
-                this.proxyBase = jsonResponse.baseUrl;
-                this.loadIframe(jsonResponse.htmlContent);
+                if (response.ok) {
+                    const jsonResponse = await response.json();
+                    console.log(jsonResponse);
+                    this.proxyBase = jsonResponse.baseUrl;
+                    this.loadIframe(jsonResponse.htmlContent);
+                }
+
+                return new Promise(resolve => {
+                    // const parent = document.getElementsByClassName("WACFrameWord")[0];
+                    const doc = this.iframe.contentDocument;
+                    const observer = new MutationObserver(mutations => {
+                        if (doc.getElementById("WACScroller") || doc.getElementById("AppForOfficeOverlay") || doc.querySelector("#m_excelWebRenderer_ewaCtl_m_sheetTabBar > div.ewa-stb-contentarea > div > ul")) {
+                            observer.disconnect();
+                            resolve();
+                        }
+                    });
+                    observer.observe(doc, {attributes: false, childList: true, characterData: false, subtree:true});
+                })
+
+            } catch (error) {
+                return Promise.reject(error);
             }
-
-            return new Promise(resolve => {
-                // const parent = document.getElementsByClassName("WACFrameWord")[0];
-                const doc = this.iframe.contentDocument;
-                const observer = new MutationObserver(mutations => {
-                    if (doc.getElementById("WACScroller") || doc.getElementById("AppForOfficeOverlay")) {
-                        observer.disconnect();
-                        resolve();
-                    }
-                });
-                observer.observe(doc, {attributes: false, childList: true, characterData: false, subtree:true});
-            })
-
-        } catch (error) {
-            return Promise.reject(error);
+        } else if (this.role === Role.Receiver) {
+            
+        } else {
+            console.error("Invalid Role");
         }
     }
 
     syncDocument() {
         this.channel.join().then(() => {
-            this._syncPPT();
+            if (this.iframe.contentDocument.getElementById("WACScroller")) {
+                this._syncDOC();
+            } else if (this.iframe.contentDocument.querySelector("#m_excelWebRenderer_ewaCtl_m_sheetTabBar > div.ewa-stb-contentarea > div > ul")) {
+                this._syncXLS();
+            } else {
+                this._syncPPT();
+            }
         }).catch(error => {
             console.error("Error Joining RTM channel " + error,)
         });
+    }
+
+    _syncXLS() {
+        const iframeDocument = this.iframe.contentDocument;
+        if (this.role === Role.Broadcaster) {
+            const scrollElement = iframeDocument.getElementById("m_excelWebRenderer_ewaCtl_sheetContentDiv");
+            scrollElement.onwheel = () => {
+                console.log({
+                    type: "scroll",
+                    sT: scrollElement.scrollTop,
+                    sL: scrollElement.scrollLeft,
+                    fileUrl: this.fileUrl
+                })
+                this.channel.sendMessage({
+                    text: JSON.stringify({
+                        type: "scroll",
+                        sT: scrollElement.scrollTop,
+                        sL: scrollElement.scrollLeft,
+                        fileUrl: this.fileUrl
+                    })
+                });
+            }
+
+            const bottomList = iframeDocument.querySelector("#m_excelWebRenderer_ewaCtl_m_sheetTabBar > div.ewa-stb-contentarea > div > ul");
+            for (let ele of bottomList.children) {
+                ele.addEventListener('click', event => {
+                    console.log(event);
+                    const clicked = event.target;
+                    const listBottom = iframeDocument.querySelectorAll("ul > li > a > span > span:nth-child(1)");
+                    const indexClicked = Array.prototype.indexOf.call(listBottom, clicked);
+                    console.log({
+                        type: "click",
+                        index: indexClicked,
+                        fileUrl: this.fileUrl
+                    })
+                    this.channel.sendMessage({
+                        text: JSON.stringify({
+                            type: "click",
+                            index: indexClicked,
+                            fileUrl: this.fileUrl
+                        })
+                    })
+                })
+            }
+
+        } else if (this.role === Role.Receiver) {
+            this.channel.on("ChannelMessage", ({ text }, _senderId) => {
+                const response = JSON.parse(text);
+                console.log(text);
+                if (this.fileUrl == undefined) {
+                    this.loadDocument(response.fileUrl);
+                }
+                if (response.type == "scroll") {
+                    const scrollElement = iframeDocument.getElementById("m_excelWebRenderer_ewaCtl_sheetContentDiv");
+                    scrollElement.scrollTo(response.sL, response.sT);
+                } else if (response.type == "click") {
+                    const indexClicked = response.index;
+                    const listBottom = iframeDocument.querySelectorAll("ul > li > a > span > span:nth-child(1)");
+                    const nodeToNavigate = listBottom[indexClicked];
+                    var clickEvent = new MouseEvent('mousedown', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    nodeToNavigate.dispatchEvent(clickEvent);
+                }
+            });
+        } else {
+            console.error("Invalid Role Specified");
+        }
     }
 
     _syncDOC() {
@@ -120,7 +202,7 @@ export default class AgoraOffice {
     }
 
     _syncPPT() {
-        if (this.role == Role.Broadcaster) {
+        if (this.role === Role.Broadcaster) {
             setInterval(() => {
                 const slideNumber = this.iframe.contentDocument.querySelector("#ButtonSlideMenu-Medium14 > span").textContent.split(" ")[1];
                 this.channel.sendMessage({
@@ -130,7 +212,7 @@ export default class AgoraOffice {
                     })
                 });
             }, 1000);
-        } else if (this.role == Role.Receiver) {
+        } else if (this.role === Role.Receiver) {
             this.channel.on("ChannelMessage", ({ text }, _senderId) => {
                 const response = JSON.parse(text);
                 if (this.fileUrl == undefined) {
@@ -165,7 +247,19 @@ export default class AgoraOffice {
         const document = this.iframe.contentWindow.document; 
         const dom = new DOMParser().parseFromString(content, "text/html");
         const mutScript = document.createElement("script");
+        const xhookScript = document.createElement("script");
+        xhookScript.src = "//unpkg.com/xhook@latest/dist/xhook.min.js";
         const mutScriptContent = ` 
+            xhook.before(request => {
+                if (!request.url.startsWith("http")) return; 
+                const reqUrl = new URL(request.url);
+                if (reqUrl.hostname.includes("excel")) {
+                    reqUrl.pathname = "/proxy/" + encodeURIComponent(reqUrl.hostname) + reqUrl.pathname;
+                    reqUrl.hostname = "${this.baseUrl.toString().substring(8)}";
+                    request.url = reqUrl.toString();
+                }
+            });
+
             Object.defineProperty(HTMLImageElement.prototype, 'src', {
                 enumerable: true,
                 get: function() {
@@ -233,6 +327,7 @@ export default class AgoraOffice {
                 dom.body.appendChild(newScriptTag);
                 dom.head.insertBefore(base, dom.head.firstChild);
                 dom.head.insertBefore(mutScript, dom.head.firstChild);
+                dom.head.insertBefore(xhookScript, dom.head.firstChild);
                 document.open();
                 document.write(dom.documentElement.innerHTML);
                 document.close();
@@ -240,6 +335,7 @@ export default class AgoraOffice {
         } else {
             dom.head.insertBefore(base, dom.head.firstChild);
             dom.head.insertBefore(mutScript, dom.head.firstChild);
+            dom.head.insertBefore(xhookScript, dom.head.firstChild);
             document.open();
             document.write(dom.documentElement.innerHTML);
             document.close();
