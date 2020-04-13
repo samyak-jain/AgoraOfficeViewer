@@ -16,6 +16,7 @@ export default class AgoraOffice {
     role: Role;
     fileUrl: URL;
     proxyBase: string;
+    type: string;
 
     constructor(baseUrl: string, channel: RtmChannel, iframe: HTMLIFrameElement) {
         this.baseUrl = baseUrl;
@@ -39,6 +40,8 @@ export default class AgoraOffice {
                 return new Promise(resolve => {
                     window.document.addEventListener('iframeEvent', (iframeResponse: CustomEvent) => {
                         const fileUrl: URL = new URL(`/files/${iframeResponse.detail}`, this.baseUrl);
+                        const extExtract = /(?:\.([^.]+))?$/;
+                        this.type = extExtract.exec(iframeResponse.detail)[1];
                         resolve(fileUrl);
                     })
                 });
@@ -80,6 +83,7 @@ export default class AgoraOffice {
         return new Promise(resolve => {
             this.channel.on("ChannelMessage", ({ text }, _senderId) => {
                 const response = JSON.parse(text);
+                this.type = response.fType;
                 resolve(response.fileUrl);
             });
         })
@@ -87,10 +91,13 @@ export default class AgoraOffice {
 
     _sync() {
         if (this.iframe.contentDocument.getElementById("WACScroller")) {
+            this.type = "word";
             this._syncDOC();
         } else if (this.iframe.contentDocument.querySelector("#m_excelWebRenderer_ewaCtl_m_sheetTabBar > div.ewa-stb-contentarea > div > ul")) {
+            this.type = "excel";
             this._syncXLS();
         } else {
+            this.type = "ppt";
             this._syncPPT();
         }
     }
@@ -121,7 +128,8 @@ export default class AgoraOffice {
                         type: "scroll",
                         sT: scrollElement.scrollTop,
                         sL: scrollElement.scrollLeft,
-                        fileUrl: this.fileUrl
+                        fileUrl: this.fileUrl,
+                        fType: this.type
                     })
                 });
             }
@@ -142,7 +150,8 @@ export default class AgoraOffice {
                         text: JSON.stringify({
                             type: "click",
                             index: indexClicked,
-                            fileUrl: this.fileUrl
+                            fileUrl: this.fileUrl,
+                            fType: this.type
                         })
                     })
                 })
@@ -182,7 +191,8 @@ export default class AgoraOffice {
                     text: JSON.stringify({
                         sT: scrollElement.scrollTop,
                         sL: scrollElement.scrollLeft,
-                        fileUrl: this.fileUrl
+                        fileUrl: this.fileUrl,
+                        fType: this.type
                     })
                 }).catch(error => {
                     console.error("There was an error trying to send a message in RTM " + error);
@@ -209,7 +219,8 @@ export default class AgoraOffice {
                 this.channel.sendMessage({
                     text: JSON.stringify({
                         num: slideNumber,
-                        fileUrl: this.fileUrl
+                        fileUrl: this.fileUrl,
+                        fType: this.type
                     })
                 });
             }, 1000);
@@ -247,80 +258,82 @@ export default class AgoraOffice {
     loadIframe(content: string) {
         const document = this.iframe.contentWindow.document; 
         const dom = new DOMParser().parseFromString(content, "text/html");
-        const mutScript = document.createElement("script");
-        const xhookScript = document.createElement("script");
-        xhookScript.src = "//unpkg.com/xhook@latest/dist/xhook.min.js";
-        const mutScriptContent = ` 
-            xhook.before(request => {
-                if (!request.url.startsWith("http")) return; 
-                const reqUrl = new URL(request.url);
-                if (reqUrl.hostname.includes("excel")) {
-                    reqUrl.pathname = "/proxy/" + encodeURIComponent(reqUrl.hostname) + reqUrl.pathname;
-                    reqUrl.hostname = "${this.baseUrl.toString().substring(8)}";
-                    request.url = reqUrl.toString();
-                }
-            });
-
-            Object.defineProperty(HTMLImageElement.prototype, 'src', {
-                enumerable: true,
-                get: function() {
-                    return this.getAttribute('src');
-                },
-                set: function(url) {
-                    if (!url.startsWith("http")) {
-                        this.crossOrigin = '';
-                        this.setAttribute('src', url);
+        console.log(this.type);
+        console.log(this.type != undefined && this.type != 'docx' && this.type != 'doc');
+        if (this.type != undefined && this.type != 'docx' && this.type != 'doc') {
+            const mutScript = document.createElement("script");
+            const xhookScript = document.createElement("script");
+            xhookScript.src = "//unpkg.com/xhook@latest/dist/xhook.min.js";
+            const mutScriptContent = ` 
+                xhook.before(request => {
+                    if (!request.url.startsWith("http")) return; 
+                    const reqUrl = new URL(request.url);
+                    if (reqUrl.hostname.includes("excel")) {
+                        reqUrl.pathname = "/proxy/" + encodeURIComponent(reqUrl.hostname) + reqUrl.pathname;
+                        reqUrl.hostname = "${this.baseUrl.toString().substring(8)}";
+                        request.url = reqUrl.toString();
                     }
-                    else if (!url.startsWith("blob:") && !url.startsWith("data:")) {
-                        // Set if not already set
-                        if (this.crossOrigin !== undefined) {
+                });
+
+                Object.defineProperty(HTMLImageElement.prototype, 'src', {
+                    enumerable: true,
+                    get: function() {
+                        return this.getAttribute('src');
+                    },
+                    set: function(url) {
+                        if (!url.startsWith("http")) {
                             this.crossOrigin = '';
-                        }
-                        const currentUrl = new URL(url);
-                        if (currentUrl) {
-                            const newUrl = new URL("/proxy/" + encodeURIComponent(currentUrl.host) + currentUrl.pathname, "${this.baseUrl.toString()}").toString();
-                            this.setAttribute('src', newUrl);
-                        } else {
-                            // Set the original attribute
                             this.setAttribute('src', url);
                         }
-                    } else {
-                        this.crossOrigin = undefined;
-                        this.setAttribute('src', url);
-                    }
-                },
-            });
-        `;
-        mutScript.src = "data:text/javascript;charset=utf-8," + escape(mutScriptContent);
+                        else if (!url.startsWith("blob:") && !url.startsWith("data:")) {
+                            // Set if not already set
+                            if (this.crossOrigin !== undefined) {
+                                this.crossOrigin = '';
+                            }
+                            const currentUrl = new URL(url);
+                            if (currentUrl) {
+                                const newUrl = new URL("/proxy/" + encodeURIComponent(currentUrl.host) + currentUrl.pathname, "${this.baseUrl.toString()}").toString();
+                                this.setAttribute('src', newUrl);
+                            } else {
+                                // Set the original attribute
+                                this.setAttribute('src', url);
+                            }
+                        } else {
+                            this.crossOrigin = undefined;
+                            this.setAttribute('src', url);
+                        }
+                    },
+                });
+            `;
+            mutScript.src = "data:text/javascript;charset=utf-8," + escape(mutScriptContent);
+            dom.head.insertBefore(mutScript, dom.head.firstChild);
+            dom.head.insertBefore(xhookScript, dom.head.firstChild);
+        }
         const base = document.createElement("base");
         const url = new URL(this.baseUrl);;
         const proxyComponent = (this.proxyBase === undefined) ? "" : `proxy/${encodeURIComponent(this.proxyBase)}/`;
         base.setAttribute("href", `${url.protocol}//${url.hostname}${url.port ? ":" + url.port : ""}/${proxyComponent}`);
-        const scriptTag: HTMLScriptElement = dom.querySelector("#applicationOuterContainer > script:nth-child(6)");
-        if (scriptTag) {
-            fetch(`${this.baseUrl.toString()}/assets/BootView.js`).then(response => {
-                return response.text();
-            }).then(data => {
-                scriptTag.parentElement.removeChild(scriptTag);
-                const newScriptTag = document.createElement("script");
-                const scriptContent = document.createTextNode(data);
-                newScriptTag.appendChild(scriptContent);
-                dom.body.appendChild(newScriptTag);
-                dom.head.insertBefore(base, dom.head.firstChild);
-                dom.head.insertBefore(mutScript, dom.head.firstChild);
-                dom.head.insertBefore(xhookScript, dom.head.firstChild);
-                document.open();
-                document.write(dom.documentElement.innerHTML);
-                document.close();
-            });
-        } else {
+        // const scriptTag: HTMLScriptElement = dom.querySelector("#applicationOuterContainer > script:nth-child(6)");
+        // if (scriptTag) {
+        //     fetch(`${this.baseUrl.toString()}/assets/BootView.js`).then(response => {
+        //         return response.text();
+        //     }).then(data => {
+        //         scriptTag.parentElement.removeChild(scriptTag);
+        //         const newScriptTag = document.createElement("script");
+        //         const scriptContent = document.createTextNode(data);
+        //         newScriptTag.appendChild(scriptContent);
+        //         dom.body.appendChild(newScriptTag);
+        //         dom.head.insertBefore(base, dom.head.firstChild);
+        //         document.open();
+        //         document.write(dom.documentElement.innerHTML);
+        //         document.close();
+        //     });
+        // } else {
             dom.head.insertBefore(base, dom.head.firstChild);
-            dom.head.insertBefore(mutScript, dom.head.firstChild);
-            dom.head.insertBefore(xhookScript, dom.head.firstChild);
             document.open();
             document.write(dom.documentElement.innerHTML);
             document.close();
-        }
+        // }
     }
 
     stopSync() {
