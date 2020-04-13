@@ -1,11 +1,18 @@
 {
-  "name": "agoraofficeviewer",
-  "version": "1.0.0",
+  "name": "agora-office",
+  "version": "0.0.4",
   "description": "A typescript library to easily embed office documents in your webpage along with syncing enabled with Agora RTM",
-  "main": "index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
-  "license": "ISC"
+  "files": [
+    "dist"
+  ],
+  "author": "Samyak",
+  "license": "MIT",
+  "devDependencies": {
+    "agora-rtm-sdk": "^1.2.2"
+  }
 }
